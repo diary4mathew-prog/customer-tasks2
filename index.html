@@ -1,0 +1,759 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Customer Tasks (Offline)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <!-- SheetJS for parsing Excel/CSV in-browser -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.20.0/dist/xlsx.full.min.js"></script>
+  <style>
+    :root{
+      --bg:#0b1020; --panel:#121a35; --panel2:#0f1530; --text:#eaf0ff; --muted:#aab4d6;
+      --border:#1f2a4f; --accent:#5b8cff; --accent2:#74d680; --warn:#ffcc66; --danger:#ff6b6b;
+    }
+    *{box-sizing:border-box}
+    body{margin:0; font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif; background:linear-gradient(180deg,#0a0f1f 0%, #0e1430 100%); color:var(--text)}
+    header{position:sticky; top:0; z-index:10; padding:16px; border-bottom:1px solid var(--border); background:rgba(13,18,40,.7); backdrop-filter:blur(6px) saturate(140%)}
+    .container{max-width:1100px; margin:18px auto; padding:0 14px}
+    h1{margin:0; font-size:20px}
+    .sub{margin-top:4px; color:var(--muted); font-size:13px}
+    .toolbar{margin-top:12px; display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+    input[type="text"], input[type="date"], textarea, select{
+      width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:#0b1433; color:var(--text); outline:none;
+    }
+    .search{min-width:280px; flex:1}
+    .btn{appearance:none; border:none; border-radius:10px; padding:9px 13px; color:#fff; font-weight:600; cursor:pointer; transition:.15s transform ease, .2s background ease}
+    .btn:hover{transform:translateY(-1px)}
+    .btn.primary{background:linear-gradient(180deg, var(--accent) 0%, #3f69ff 100%)}
+    .btn.secondary{background:#1a2446; border:1px solid var(--border); color:#dfe7ff}
+    .btn.ok{background:linear-gradient(180deg, var(--accent2) 0%, #3fbf74 100%)}
+    .btn.warn{background:linear-gradient(180deg, var(--warn) 0%, #f5b24e 100%); color:#2a1b05}
+    .btn.danger{background:linear-gradient(180deg, var(--danger) 0%, #ff5252 100%)}
+    .btn.sm{padding:6px 10px; font-size:12px}
+    .tabs{display:flex; gap:8px; margin-top:14px}
+    .tab{padding:8px 12px; border-radius:10px; background:#121a35; border:1px solid var(--border); color:#cdd7ff; cursor:pointer; font-weight:700}
+    .tab.active{background:#1b2552}
+    .card{background:linear-gradient(180deg,var(--panel) 0%, var(--panel2) 100%); border:1px solid var(--border); border-radius:16px; padding:16px; box-shadow:0 10px 30px rgba(0,0,0,.25)}
+    .filters{display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px}
+    .chip{padding:7px 12px; background:#121a35; border:1px solid var(--border); border-radius:999px; color:#cfe1ff; font-weight:700; cursor:pointer; font-size:12px}
+    .chip.active{background:#1b2552}
+    .more{position:relative}
+    .dropdown{position:absolute; top:36px; left:0; background:#0e1430; border:1px solid var(--border); border-radius:12px; display:none; min-width:180px; z-index:5}
+    .dropdown button{display:block; width:100%; text-align:left; padding:8px 12px; background:transparent; border:none; color:#dbe4ff; cursor:pointer}
+    .dropdown button:hover{background:#16204a}
+    .list{margin-top:10px; border:1px solid var(--border); border-radius:12px; overflow:hidden}
+    .row{display:flex; gap:12px; align-items:center; padding:10px 12px; border-bottom:1px solid var(--border)}
+    .row:last-child{border-bottom:none}
+    .row .meta{flex:1}
+    .muted{color:var(--muted); font-size:12px}
+    .pill{display:inline-block; padding:3px 8px; border-radius:999px; font-size:12px; font-weight:800}
+    .p-pending{background:#20305f; color:#7fb1ff}
+    .p-inprog{background:#4a2b05; color:#ffb067}
+    .p-onhold{background:#2e1f44; color:#c79bff}
+    .p-cancel{background:#313842; color:#9bb0c4}
+    .p-due{background:#372a12; color:#ffd27e}
+    .p-overdue{background:#3a1212; color:#ff9a9a}
+    .p-complete{background:#173726; color:#87e2a5}
+    .hidden{display:none}
+    .hr{height:1px; background:var(--border); margin:12px 0}
+    .inline{display:flex; gap:8px; align-items:center}
+    .grow{flex:1}
+    .right{margin-left:auto}
+    .small{font-size:12px}
+    /* Modals */
+    .modal-backdrop{position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; align-items:center; justify-content:center; z-index:50}
+    .modal{width:min(680px,96vw); background:#0e1430; border:1px solid var(--border); border-radius:14px; padding:16px}
+    .modal h3{margin:0 0 10px 0}
+    .numbers{display:flex; flex-wrap:wrap; gap:8px; margin-top:6px}
+    .number-pill{display:flex; gap:6px; align-items:center; padding:6px 10px; border-radius:999px; background:#1a2446; border:1px solid var(--border); font-size:12px}
+    .x{cursor:pointer; opacity:.8}
+    .x:hover{opacity:1}
+
+    /* Toasts */
+    #toaster{position:fixed; right:16px; bottom:16px; display:flex; flex-direction:column; gap:8px; z-index:9999}
+    .toast{min-width:260px; max-width:420px; padding:10px 12px; border-radius:10px; color:#fff; font-weight:600; box-shadow:0 10px 20px rgba(0,0,0,.25)}
+    .toast.info{background:#2b4a9e}
+    .toast.success{background:#2a7a47}
+    .toast.error{background:#a33a3a}
+    .toast button{background:transparent; border:none; color:#fff; margin-left:8px; cursor:pointer; font-weight:800}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Customer Tasks (Offline)</h1>
+    <div class="sub">Upload customers (Name + Mobile), add tasks, and track statuses. Data stays in your browser.</div>
+    <div class="toolbar">
+      <input id="search" class="search" type="text" placeholder="Search name, mobile, task, status, or date (YYYY-MM-DD)..." />
+      <label class="btn secondary">
+        <input id="fileInput" type="file" accept=".csv,.xlsx,.xls,.xlsm" hidden>
+        Import
+      </label>
+      <button id="exportBtn" class="btn secondary">Export CSV</button>
+      <button id="addCustomerBtn" class="btn primary">Add Customer</button>
+      <button id="addTaskBtn" class="btn ok">Add Task</button>
+    </div>
+    <div class="tabs">
+      <div id="tabActive" class="tab active">Active <span id="countActive" class="small"></span></div>
+      <div id="tabCompleted" class="tab">Completed <span id="countCompleted" class="small"></span></div>
+    </div>
+  </header>
+
+  <div class="container">
+    <div id="activeView">
+      <div class="card">
+        <div class="filters">
+          <button data-filter="Pending" class="chip active">Pending</button>
+          <button data-filter="In Progress" class="chip">In Progress</button>
+          <button data-filter="On Hold" class="chip">On Hold</button>
+          <div class="more">
+            <button id="moreBtn" class="chip">More ▾</button>
+            <div id="moreMenu" class="dropdown">
+              <button data-filter="AllActive">All (Active)</button>
+              <button data-filter="Cancelled">Cancelled</button>
+            </div>
+          </div>
+          <div class="right muted">Overdue tasks show <span class="pill p-overdue">Overdue</span></div>
+        </div>
+        <div class="inline" style="margin-bottom:10px">
+          <button id="openPickerBtn" class="btn secondary sm">Customer Picker</button>
+          <span class="small muted">Tip: Use Customer Picker to add tasks.</span>
+        </div>
+        <div id="activeList" class="list"></div>
+      </div>
+    </div>
+
+    <div id="completedView" class="hidden">
+      <div class="card">
+        <div class="filters">
+          <span class="muted">These tasks are archived. Change status to restore to Active.</span>
+        </div>
+        <div id="completedList" class="list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Customer Modal -->
+  <div id="customerModal" class="modal-backdrop">
+    <div class="modal">
+      <h3 id="customerModalTitle">Add Customer</h3>
+      <div class="inline" style="gap:16px; flex-wrap:wrap">
+        <div class="grow">
+          <label>Name</label>
+          <input id="custName" type="text" placeholder="Customer name (can be blank)" />
+        </div>
+        <div class="grow">
+          <label>Primary Mobile</label>
+          <input id="custMobile" type="text" placeholder="Primary mobile" />
+        </div>
+      </div>
+      <div class="hr"></div>
+      <div>
+        <div class="inline"><label>Numbers</label><span class="small muted">(Add multiple numbers. Remove with ✕)</span></div>
+        <div id="numberList" class="numbers"></div>
+        <div class="inline" style="margin-top:8px">
+          <input id="newNumber" type="text" placeholder="Add another number" class="grow" />
+          <button id="addNumberBtn" class="btn secondary sm">Add Number</button>
+        </div>
+      </div>
+      <div class="hr"></div>
+      <div class="inline">
+        <button id="saveCustomerBtn" class="btn ok">Save</button>
+        <button id="cancelCustomerBtn" class="btn secondary">Cancel</button>
+        <div class="right small muted" id="customerTimestamps"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Task Modal -->
+  <div id="taskModal" class="modal-backdrop">
+    <div class="modal">
+      <h3 id="taskModalTitle">Add Task</h3>
+      <div class="inline muted" id="taskCustomerMeta"></div>
+      <div class="inline" style="gap:16px; flex-wrap:wrap; margin-top:10px">
+        <div class="grow">
+          <label>Task Description</label>
+          <textarea id="taskDesc" placeholder="What needs to be done?"></textarea>
+        </div>
+        <div style="min-width:240px; flex:1">
+          <label>Due Date</label>
+          <input id="taskDue" type="date" />
+          <div class="hr"></div>
+          <label>Status</label>
+          <select id="taskStatus">
+            <option>Pending</option>
+            <option>In Progress</option>
+            <option>On Hold</option>
+            <option>Cancelled</option>
+            <option>Completed</option>
+          </select>
+          <div class="small muted" style="margin-top:6px">Completed tasks move to the Completed tab.</div>
+        </div>
+      </div>
+      <div class="hr"></div>
+      <div class="inline">
+        <button id="saveTaskBtn" class="btn ok">Save</button>
+        <button id="cancelTaskBtn" class="btn secondary">Cancel</button>
+        <div class="right small muted" id="taskTimestamps"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast host -->
+  <div id="toaster"></div>
+
+  <script>
+    /* ===================== Toasts ===================== */
+    function showToast(type, msg, ms=3500){
+      const host = document.getElementById('toaster');
+      if(!host){ alert(msg); return; }
+      const el = document.createElement('div');
+      el.className = `toast ${type}`;
+      el.innerHTML = `<span>${msg}</span><button onclick="this.parentElement.remove()">✕</button>`;
+      host.appendChild(el);
+      setTimeout(()=>{ el.remove(); }, ms);
+    }
+
+    /* ===================== Persistence ===================== */
+    const LS_CUSTOMERS = "ct_customers_v1";
+    const LS_TASKS = "ct_tasks_v1";
+
+    let customers = loadJSON(LS_CUSTOMERS, []);
+    let tasks = loadJSON(LS_TASKS, []);
+
+    function loadJSON(key, fallback){
+      try{ const s = localStorage.getItem(key); return s ? JSON.parse(s) : fallback; }
+      catch(e){ return fallback; }
+    }
+    function saveAll(){
+      localStorage.setItem(LS_CUSTOMERS, JSON.stringify(customers));
+      localStorage.setItem(LS_TASKS, JSON.stringify(tasks));
+      render();
+    }
+
+    /* ===================== Utils ===================== */
+    const q = sel => document.querySelector(sel);
+    const qAll = sel => Array.from(document.querySelectorAll(sel));
+    const uuid = () => ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g,c=>(c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c/4).toString(16));
+    const nowISO = () => new Date().toISOString();
+    const fmtDate = d => d ? new Date(d).toLocaleString() : "";
+    const normalizeDigits = s => (s||"").replace(/[^\d]/g,"");
+    function escapeHtml(s){ return String(s??"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+    const STATUS = {
+      PENDING: "Pending",
+      INPROG: "In Progress",
+      ONHOLD: "On Hold",
+      CANCELLED: "Cancelled",
+      COMPLETED: "Completed",
+    };
+
+    /* ===================== State ===================== */
+    let activeTab = "Active";
+    let activeFilter = STATUS.PENDING;
+    let searchTerm = "";
+
+    /* ===================== DOM refs ===================== */
+    const tabActive = q("#tabActive");
+    const tabCompleted = q("#tabCompleted");
+    const activeView = q("#activeView");
+    const completedView = q("#completedView");
+    const activeList = q("#activeList");
+    const completedList = q("#completedList");
+    const searchInput = q("#search");
+
+    /* ===================== Tabs ===================== */
+    tabActive.addEventListener("click", ()=>{ activeTab="Active"; tabActive.classList.add("active"); tabCompleted.classList.remove("active"); activeView.classList.remove("hidden"); completedView.classList.add("hidden"); render(); });
+    tabCompleted.addEventListener("click", ()=>{ activeTab="Completed"; tabCompleted.classList.add("active"); tabActive.classList.remove("active"); completedView.classList.remove("hidden"); activeView.classList.add("hidden"); render(); });
+
+    /* ===================== Filters ===================== */
+    qAll('.filters .chip[data-filter]').forEach(ch=>{
+      ch.addEventListener("click", ()=>{
+        qAll('.filters .chip[data-filter]').forEach(x=>x.classList.remove("active"));
+        ch.classList.add("active");
+        activeFilter = ch.getAttribute("data-filter");
+        render();
+      });
+    });
+
+    const moreBtn = q("#moreBtn");
+    const moreMenu = q("#moreMenu");
+    moreBtn.addEventListener("click", ()=>{ moreMenu.style.display = moreMenu.style.display === "block" ? "none" : "block"; });
+    document.addEventListener("click", (e)=>{ if(!moreBtn.contains(e.target) && !moreMenu.contains(e.target)) moreMenu.style.display = "none"; });
+    qAll('#moreMenu button[data-filter]').forEach(b=>{
+      b.addEventListener("click", ()=>{ activeFilter = b.getAttribute("data-filter"); qAll('.filters .chip[data-filter]').forEach(x=>x.classList.remove("active")); moreMenu.style.display = "none"; render(); });
+    });
+
+    /* ===================== Search ===================== */
+    searchInput.addEventListener("input", ()=>{ searchTerm = searchInput.value.trim().toLowerCase(); render(); });
+
+    function matchesSearch(t){
+      if(!searchTerm) return true;
+      const c = customers.find(c => c.id === t.customerId);
+      const hay = [
+        (t.description||""),(t.status||""),(t.dueDate||""),(t.createdAt||""),(t.updatedAt||""),
+        c ? (c.name||"") : "", ...(c ? (c.numbers||[]) : [])
+      ].join(" ").toLowerCase();
+      const digits = (c ? (c.numbers||[]).map(n=>normalizeDigits(n)).join(" ") : "");
+      return hay.includes(searchTerm) || digits.includes(searchTerm.replace(/[^\d]/g,""));
+    }
+
+    /* ===================== Render ===================== */
+    function render(){
+      q("#countActive").textContent = `(${tasks.filter(t=>t.status!==STATUS.COMPLETED).length})`;
+      q("#countCompleted").textContent = `(${tasks.filter(t=>t.status===STATUS.COMPLETED).length})`;
+      if(activeTab==="Active") renderActive(); else renderCompleted();
+    }
+
+    function isOverdue(t){
+      if(!t.dueDate || t.status===STATUS.COMPLETED) return false;
+      const today = new Date(); today.setHours(0,0,0,0);
+      const due = new Date(t.dueDate); due.setHours(0,0,0,0);
+      return due < today;
+    }
+    function pillClass(status){
+      switch(status){
+        case STATUS.PENDING: return "p-pending";
+        case STATUS.INPROG: return "p-inprog";
+        case STATUS.ONHOLD: return "p-onhold";
+        case STATUS.CANCELLED: return "p-cancel";
+        case STATUS.COMPLETED: return "p-complete";
+        default: return "p-pending";
+      }
+    }
+
+    function renderActive(){
+      activeList.innerHTML = "";
+      let pool = tasks.filter(t => t.status !== STATUS.COMPLETED);
+      if([STATUS.PENDING, STATUS.INPROG, STATUS.ONHOLD, STATUS.CANCELLED].includes(activeFilter)){
+        pool = pool.filter(t => t.status === activeFilter);
+      }
+      pool = pool.filter(matchesSearch);
+      pool.sort((a,b)=> new Date(b.updatedAt||b.createdAt) - new Date(a.updatedAt||a.createdAt));
+
+      if(pool.length===0){
+        activeList.innerHTML = `<div class="row"><div class="meta">No active tasks found.</div><button class="btn primary sm" onclick="openCustomerModal()">Add Customer</button></div>`;
+        return;
+      }
+      for(const t of pool){
+        const c = customers.find(c=>c.id===t.customerId);
+        const name = c ? (c.name||"Unknown") : "(missing)";
+        const nums = c ? (c.numbers||[]).join(", ") : "";
+        const overdue = isOverdue(t);
+        const row = document.createElement("div");
+        row.className = "row";
+        row.innerHTML = `
+          <div class="meta">
+            <div class="inline">
+              <strong>${escapeHtml(name)}</strong>
+              <span class="muted">— ${escapeHtml(nums)}</span>
+              <span class="pill ${pillClass(t.status)}" style="margin-left:8px">${t.status}</span>
+              ${t.dueDate ? `<span class="pill ${overdue? 'p-overdue':'p-due'}" style="margin-left:8px">Due: ${t.dueDate}</span>` : ""}
+            </div>
+            <div class="muted small" style="margin-top:4px">${escapeHtml(t.description||"(no description)")} • Created: ${fmtDate(t.createdAt)} • Updated: ${fmtDate(t.updatedAt)}</div>
+          </div>
+          <div class="inline">
+            <button class="btn secondary sm" onclick='editTask("${t.id}")'>Edit</button>
+            <button class="btn ok sm" onclick='markStatus("${t.id}","${STATUS.COMPLETED}")'>Complete</button>
+          </div>
+        `;
+        activeList.appendChild(row);
+      }
+    }
+
+    function renderCompleted(){
+      completedList.innerHTML = "";
+      let pool = tasks.filter(t => t.status === STATUS.COMPLETED);
+      pool = pool.filter(matchesSearch);
+      pool.sort((a,b)=> new Date(b.updatedAt||b.createdAt) - new Date(a.updatedAt||a.createdAt));
+
+      if(pool.length===0){
+        completedList.innerHTML = `<div class="row"><div class="meta">No completed tasks.</div></div>`;
+        return;
+      }
+      for(const t of pool){
+        const c = customers.find(c=>c.id===t.customerId);
+        const name = c ? (c.name||"Unknown") : "(missing)";
+        const nums = c ? (c.numbers||[]).join(", ") : "";
+        const row = document.createElement("div");
+        row.className = "row";
+        row.innerHTML = `
+          <div class="meta">
+            <div class="inline">
+              <strong>${escapeHtml(name)}</strong>
+              <span class="muted">— ${escapeHtml(nums)}</span>
+              <span class="pill p-complete" style="margin-left:8px">Completed</span>
+              ${t.dueDate ? `<span class="pill p-due" style="margin-left:8px">Was Due: ${t.dueDate}</span>` : ""}
+            </div>
+            <div class="muted small" style="margin-top:4px">${escapeHtml(t.description||"(no description)")} • Created: ${fmtDate(t.createdAt)} • Updated: ${fmtDate(t.updatedAt)}</div>
+          </div>
+          <div class="inline">
+            <button class="btn secondary sm" onclick='editTask("${t.id}")'>Open</button>
+            <button class="btn warn sm" onclick='markStatus("${t.id}","${STATUS.PENDING}")'>Restore</button>
+          </div>
+        `;
+        completedList.appendChild(row);
+      }
+    }
+
+    /* ===================== Customers ===================== */
+    const customerModal = q("#customerModal");
+    const custName = q("#custName");
+    const custMobile = q("#custMobile");
+    const numberList = q("#numberList");
+    const newNumber = q("#newNumber");
+    const addNumberBtn = q("#addNumberBtn");
+    const saveCustomerBtn = q("#saveCustomerBtn");
+    const cancelCustomerBtn = q("#cancelCustomerBtn");
+    const customerModalTitle = q("#customerModalTitle");
+    const customerTimestamps = q("#customerTimestamps");
+    q("#addCustomerBtn").addEventListener("click", ()=> openCustomerModal());
+
+    let editingCustomerId = null;
+    let tempNumbers = [];
+
+    function openCustomerModal(id=null){
+      editingCustomerId = id;
+      tempNumbers = [];
+      if(id){
+        const c = customers.find(x=>x.id===id);
+        customerModalTitle.textContent = "Edit Customer";
+        custName.value = c?.name || "";
+        custMobile.value = "";
+        tempNumbers = [...(c?.numbers||[])];
+        customerTimestamps.textContent = `Created: ${fmtDate(c.createdAt)} • Updated: ${fmtDate(c.updatedAt)}`;
+      }else{
+        customerModalTitle.textContent = "Add Customer";
+        custName.value = "";
+        custMobile.value = "";
+        tempNumbers = [];
+        customerTimestamps.textContent = "";
+      }
+      renderNumberPills();
+      customerModal.style.display = "flex";
+      setTimeout(()=>custName.focus(), 0);
+    }
+    function closeCustomerModal(){ customerModal.style.display = "none"; }
+
+    addNumberBtn.addEventListener("click", ()=>{
+      const n = custMobile.value.trim() || newNumber.value.trim();
+      if(!n) return;
+      if(!tempNumbers.includes(n)) tempNumbers.push(n);
+      custMobile.value = ""; newNumber.value = "";
+      renderNumberPills();
+    });
+
+    function removeTempNumber(idx){
+      tempNumbers.splice(idx,1);
+      renderNumberPills();
+    }
+
+    function renderNumberPills(){
+      numberList.innerHTML = "";
+      tempNumbers.forEach((n,i)=>{
+        const el = document.createElement("div");
+        el.className = "number-pill";
+        el.innerHTML = `<span>${escapeHtml(n)}</span><span class="x" onclick="removeTempNumber(${i})">✕</span>`;
+        numberList.appendChild(el);
+      });
+    }
+
+    cancelCustomerBtn.addEventListener("click", closeCustomerModal);
+    saveCustomerBtn.addEventListener("click", ()=>{
+      const name = custName.value.trim();
+      const prim = custMobile.value.trim();
+      if(prim){ if(!tempNumbers.includes(prim)) tempNumbers.push(prim); }
+      if(editingCustomerId){
+        const c = customers.find(x=>x.id===editingCustomerId);
+        if(c){
+          c.name = name;
+          c.numbers = uniqStrings(tempNumbers);
+          c.updatedAt = nowISO();
+        }
+      }else{
+        customers.push({
+          id: uuid(), name,
+          numbers: uniqStrings(tempNumbers),
+          createdAt: nowISO(), updatedAt: nowISO()
+        });
+      }
+      saveAll();
+      closeCustomerModal();
+      showToast('success','Customer saved');
+    });
+
+    function uniqStrings(arr){
+      const seen = new Set(); const out = [];
+      for(const s of arr){ const k = String(s||"").trim(); if(!k) continue; if(!seen.has(k)){ seen.add(k); out.push(k); } }
+      return out;
+    }
+    window.removeTempNumber = removeTempNumber;
+
+    /* ===================== Tasks ===================== */
+    const taskModal = q("#taskModal");
+    const taskModalTitle = q("#taskModalTitle");
+    const taskCustomerMeta = q("#taskCustomerMeta");
+    const taskDesc = q("#taskDesc");
+    const taskDue = q("#taskDue");
+    const taskStatus = q("#taskStatus");
+    const saveTaskBtn = q("#saveTaskBtn");
+    const cancelTaskBtn = q("#cancelTaskBtn");
+    const taskTimestamps = q("#taskTimestamps");
+
+    let editingTaskId = null;
+    let editingTaskCustomerId = null;
+
+    function openTaskModal(customerId, taskId=null){
+      editingTaskId = taskId;
+      editingTaskCustomerId = customerId;
+      const c = customers.find(x=>x.id===customerId);
+      taskCustomerMeta.textContent = `${c ? (c.name||"Unknown") : "(missing)"} — ${(c?.numbers||[]).join(", ")}`;
+      if(taskId){
+        const t = tasks.find(x=>x.id===taskId);
+        taskModalTitle.textContent = "Edit Task";
+        taskDesc.value = t.description || "";
+        taskDue.value = t.dueDate || "";
+        taskStatus.value = t.status || STATUS.PENDING;
+        taskTimestamps.textContent = `Created: ${fmtDate(t.createdAt)} • Updated: ${fmtDate(t.updatedAt)}`;
+      }else{
+        taskModalTitle.textContent = "Add Task";
+        taskDesc.value = ""; taskDue.value = ""; taskStatus.value = STATUS.PENDING;
+        taskTimestamps.textContent = "";
+      }
+      taskModal.style.display = "flex";
+      setTimeout(()=>taskDesc.focus(),0);
+    }
+    function closeTaskModal(){ taskModal.style.display = "none"; }
+
+    cancelTaskBtn.addEventListener("click", closeTaskModal);
+    saveTaskBtn.addEventListener("click", ()=>{
+      const desc = taskDesc.value.trim();
+      const due = taskDue.value || "";
+      const st = taskStatus.value;
+      if(editingTaskId){
+        const t = tasks.find(x=>x.id===editingTaskId);
+        t.description = desc; t.dueDate = due; t.status = st; t.updatedAt = nowISO();
+      }else{
+        tasks.push({ id: uuid(), customerId: editingTaskCustomerId, description: desc, dueDate: due, status: st, createdAt: nowISO(), updatedAt: nowISO() });
+      }
+      saveAll(); closeTaskModal();
+      showToast('success','Task saved');
+    });
+
+    function markStatus(taskId, status){
+      const t = tasks.find(x=>x.id===taskId); if(!t) return;
+      t.status = status; t.updatedAt = nowISO(); saveAll();
+      showToast('success', status==='Completed' ? 'Task completed' : 'Task restored');
+    }
+    function editTask(taskId){
+      const t = tasks.find(x=>x.id===taskId); if(!t) return;
+      openTaskModal(t.customerId, taskId);
+    }
+    window.markStatus = markStatus;
+    window.editTask = editTask;
+
+    // "Add Task" button in toolbar → open picker (choose customer first)
+    document.getElementById("addTaskBtn").addEventListener("click", ()=>{
+      if(customers.length === 0){ showToast('error','No customers yet. Please add a customer first.'); return; }
+      openPicker();
+    });
+
+    /* ===================== Customer Picker ===================== */
+    q("#openPickerBtn").addEventListener("click", openPicker);
+
+    function openPicker(){
+      const body = document.createElement("div");
+      body.className = "modal-backdrop";
+      body.style.display = "flex";
+      body.innerHTML = `
+        <div class="modal">
+          <h3>Select Customer</h3>
+          <div class="inline" style="margin-bottom:8px">
+            <input id="pickSearch" class="grow" type="text" placeholder="Search customers by name or number..." />
+            <button id="pickAdd" class="btn primary sm" type="button">Add Customer</button>
+          </div>
+          <div id="pickList" class="list" style="max-height:50vh; overflow:auto"></div>
+          <div class="hr"></div>
+          <div class="inline">
+            <span class="small muted">Click a customer to add a task for them.</span>
+            <button id="pickClose" class="btn secondary right" type="button">Close</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(body);
+
+      const pickSearch = body.querySelector("#pickSearch");
+      const pickList = body.querySelector("#pickList");
+      const pickClose = body.querySelector("#pickClose");
+      const pickAdd = body.querySelector("#pickAdd");
+
+      function renderPick(){
+        const term = (pickSearch.value||"").toLowerCase();
+        let cs = customers.slice();
+        cs = cs.filter(c=>{
+          const hay = [c.name||"", ...(c.numbers||[])].join(" ").toLowerCase();
+          const digits = (c.numbers||[]).map(n=>normalizeDigits(n)).join(" ");
+          return hay.includes(term) || digits.includes(term.replace(/[^\d]/g,""));
+        });
+        cs.sort((a,b)=> (a.name||"").localeCompare(b.name||""));
+        pickList.innerHTML = "";
+        if(cs.length === 0){
+          const row = document.createElement("div");
+          row.className = "row";
+          row.innerHTML = `<div class="meta">No match found.</div><button class="btn primary sm" id="nmAdd">Add as New</button>`;
+          pickList.appendChild(row);
+          row.querySelector("#nmAdd").addEventListener("click", ()=>{ openCustomerModal(); body.remove(); });
+          return;
+        }
+        for(const c of cs){
+          const row = document.createElement("div");
+          row.className = "row";
+          row.innerHTML = `
+            <div class="meta">
+              <div><strong>${escapeHtml(c.name||"Unknown")}</strong> <span class="muted">— ${(c.numbers||[]).map(escapeHtml).join(", ")}</span></div>
+              <div class="muted small">Created: ${fmtDate(c.createdAt)} • Updated: ${fmtDate(c.updatedAt)}</div>
+            </div>
+            <div class="inline">
+              <button class="btn secondary sm" data-edit="${c.id}">Edit</button>
+              <button class="btn ok sm" data-add="${c.id}">Add Task</button>
+            </div>
+          `;
+          pickList.appendChild(row);
+        }
+        pickList.querySelectorAll("button[data-add]").forEach(b=>{
+          b.addEventListener("click", ()=>{ const id = b.getAttribute("data-add"); openTaskModal(id, null); body.remove(); });
+        });
+        pickList.querySelectorAll("button[data-edit]").forEach(b=>{
+          b.addEventListener("click", ()=>{ const id = b.getAttribute("data-edit"); openCustomerModal(id); body.remove(); });
+        });
+      }
+
+      pickSearch.addEventListener("input", renderPick);
+      pickClose.addEventListener("click", ()=> body.remove());
+      pickAdd.addEventListener("click", ()=>{ openCustomerModal(); body.remove(); });
+      renderPick(); pickSearch.focus();
+    }
+
+    /* ===================== Import / Export ===================== */
+    q("#fileInput").addEventListener("change", handleFile, false);
+
+    async function handleFile(ev){
+      const file = ev.target.files[0];
+      if(!file){ showToast('error','No file selected'); return; }
+      try{
+        showToast('info','Import started…');
+
+        const wb = await readWorkbook(file);
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        if(!ws){ ev.target.value=""; showToast('error','No sheets found in file'); return; }
+
+        // Formatted text preserves visible values (leading zeros etc.)
+        const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:"", raw:false, blankrows:false });
+        if(!rows || !rows.length){ ev.target.value=""; showToast('error','Empty sheet'); return; }
+
+        // Detect header row
+        let headerRowIndex = 0;
+        for(let i=0;i<rows.length;i++){
+          const r = rows[i] || [];
+          const nonEmpty = r.filter(c => String(c).trim() !== "").length;
+          if(nonEmpty >= 2){ headerRowIndex = i; break; }
+        }
+
+        const headerRaw = rows[headerRowIndex] || [];
+        const header = headerRaw.map(h => String(h).trim().toLowerCase());
+
+        // Detect columns; fallback to first two non-empty or [0,1]
+        let nameIdx = header.findIndex(h => /(^|\s)(name|customer\s*name)\b/i.test(h));
+        let mobileIdx = header.findIndex(h => /(mobile|phone|number|contact)\b/i.test(h));
+        if(nameIdx === -1 || mobileIdx === -1){
+          const nonEmptyIdx = headerRaw.map((v,idx)=>({v:String(v).trim(), idx})).filter(o=>o.v!=="").map(o=>o.idx);
+          if(nonEmptyIdx.length >= 2){ nameIdx = nonEmptyIdx[0]; mobileIdx = nonEmptyIdx[1]; }
+          else { nameIdx = 0; mobileIdx = 1; }
+        }
+
+        let newCount=0, updatedCount=0, numbersAdded=0, skipped=0;
+
+        for(let r = headerRowIndex + 1; r < rows.length; r++){
+          const row = rows[r] || [];
+          const name = String(row[nameIdx] ?? "").trim();
+          const mobile = String(row[mobileIdx] ?? "").trim();
+          if(!name && !mobile){ skipped++; continue; }
+
+          const sameName = customers.find(c => (c.name||"") === name);
+          if(sameName){
+            if(mobile && !(sameName.numbers||[]).includes(mobile)){
+              sameName.numbers.push(mobile);
+              sameName.updatedAt = nowISO();
+              numbersAdded++;
+            }
+            updatedCount++;
+          }else{
+            customers.push({ id: uuid(), name, numbers: mobile ? [mobile] : [], createdAt: nowISO(), updatedAt: nowISO() });
+            newCount++;
+          }
+        }
+
+        saveAll();
+        showToast('success', `Import complete — New: ${newCount}, Updated: ${updatedCount}, Numbers added: ${numbersAdded}, Skipped: ${skipped}`);
+      }catch(err){
+        console.error(err);
+        showToast('error','Import failed. Check file format.');
+      }finally{
+        ev.target.value = "";
+      }
+    }
+
+    function readWorkbook(file){
+      return new Promise((resolve,reject)=>{
+        const reader = new FileReader();
+        reader.onload = e => { const data = new Uint8Array(e.target.result); const wb = XLSX.read(data, {type:'array'}); resolve(wb); };
+        reader.onerror = reject;
+        reader.readAsArrayBuffer(file);
+      });
+    }
+
+    q("#exportBtn").addEventListener("click", ()=>{
+      const custRows = [["CustomerID","Customer Name","Mobile Numbers","Created At","Updated At"]];
+      for(const c of customers){
+        custRows.push([c.id, c.name||"", (c.numbers||[]).join(", "), c.createdAt||"", c.updatedAt||""]);
+      }
+      const taskRows = [["TaskID","CustomerID","Customer Name","Mobile Numbers","Task Description","Due Date","Status","Created At","Updated At"]];
+      for(const t of tasks){
+        const c = customers.find(x=>x.id===t.customerId);
+        taskRows.push([ t.id, t.customerId, c?(c.name||""):"", c?(c.numbers||[]).join(", "):"", t.description||"", t.dueDate||"", t.status||"", t.createdAt||"", t.updatedAt||"" ]);
+      }
+      downloadCSV("Customers.csv", custRows);
+      downloadCSV("Tasks.csv", taskRows);
+      showToast('success','Exported CSV files');
+    });
+
+    function downloadCSV(filename, rows){
+      const csv = rows.map(r => r.map(cell => {
+        const s = String(cell??"");
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+      }).join(",")).join("\n");
+      const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename; a.click();
+      setTimeout(()=>URL.revokeObjectURL(url), 1000);
+    }
+
+    /* ===================== Init ===================== */
+    function maybeSeed(){
+      if(customers.length === 0 && tasks.length === 0){
+        const id = uuid();
+        customers.push({ id, name: "Sample Customer", numbers: ["9876543210"], createdAt: nowISO(), updatedAt: nowISO() });
+        tasks.push({ id: uuid(), customerId: id, description: "Example task (edit me)", dueDate: new Date(Date.now()+86400000).toISOString().slice(0,10), status: STATUS.PENDING, createdAt: nowISO(), updatedAt: nowISO() });
+        saveAll();
+        showToast('info','Sample data added');
+      }else{
+        render();
+      }
+    }
+    maybeSeed();
+
+    // expose needed funcs
+    window.openCustomerModal = openCustomerModal;
+  </script>
+</body>
+</html>
